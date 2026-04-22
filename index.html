@@ -65,16 +65,7 @@
     height: 100vh; height: 100dvh;
     background: var(--bg);
   }
-  .status-bar {
-    height: calc(44px + var(--safe-top));
-    padding: var(--safe-top) 24px 0;
-    display: flex; align-items: center; justify-content: space-between;
-    flex-shrink: 0;
-    font-size: 15px; font-weight: 600; letter-spacing: -0.2px;
-    color: var(--text);
-  }
-  .status-bar .time { font-variant-numeric: tabular-nums; }
-  .status-bar .icons { display: flex; align-items: center; gap: 5px; }
+  .safe-top { height: var(--safe-top); flex-shrink: 0; }
 
   .header {
     padding: 8px 20px 10px;
@@ -222,16 +213,6 @@
     transition: transform 0.1s;
   }
   .fab:active { transform: scale(0.92); }
-  .home-indicator {
-    height: 6px;
-    display: flex; justify-content: center; align-items: flex-end;
-    padding-bottom: 8px;
-  }
-  .home-indicator .bar-h {
-    width: 134px; height: 5px; border-radius: 3px;
-    background: var(--text); opacity: 0.85;
-  }
-
   /* Modal sheet */
   .sheet-backdrop {
     position: fixed; inset: 0; background: rgba(0,0,0,0.6);
@@ -474,18 +455,7 @@
 <body>
 
 <div class="app">
-  <div class="status-bar">
-    <span class="time" id="clock">9:41</span>
-    <div class="icons">
-      <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="7.5" width="3" height="3.5" rx="0.5"/><rect x="4.5" y="5" width="3" height="6" rx="0.5"/><rect x="9" y="2.5" width="3" height="8.5" rx="0.5"/><rect x="13.5" y="0" width="3" height="11" rx="0.5"/></svg>
-      <svg width="15" height="11" viewBox="0 0 15 11" fill="currentColor"><path d="M7.5 2.2c2.6 0 5 1 6.9 2.6.3.3.8.3 1 0l1-1.1c.2-.2.2-.6 0-.8A12.2 12.2 0 0 0 7.5 0 12.2 12.2 0 0 0-.9 2.9c-.2.2-.2.6 0 .8l1 1.1c.3.3.8.3 1 0A10 10 0 0 1 7.5 2.2zm0 3.5c1.6 0 3.1.6 4.3 1.7.3.3.8.3 1 0l1-1.1c.2-.2.2-.6 0-.8a8.6 8.6 0 0 0-12.6 0c-.2.2-.2.6 0 .8l1 1.1c.3.3.8.3 1 0a6.3 6.3 0 0 1 4.3-1.7zm2.6 2.8-1.9 2c-.3.3-.8.3-1.1 0L5.2 8.5a.5.5 0 0 1 0-.7 4 4 0 0 1 4.9 0c.2.2.2.5 0 .7z"/></svg>
-      <svg width="27" height="12" viewBox="0 0 27 12" fill="none">
-        <rect x="0.5" y="0.5" width="22" height="11" rx="3" stroke="currentColor" stroke-opacity="0.4"/>
-        <rect x="2.5" y="2.5" width="18" height="7" rx="1.5" fill="currentColor"/>
-        <rect x="23.5" y="4" width="1.5" height="4" rx="0.75" fill="currentColor" fill-opacity="0.4"/>
-      </svg>
-    </div>
-  </div>
+  <div class="safe-top"></div>
 
   <div id="view"></div>
 
@@ -510,8 +480,6 @@
       <span class="label">Tendances</span>
     </button>
   </nav>
-
-  <div class="home-indicator"><div class="bar-h"></div></div>
 </div>
 
 <div class="sheet-backdrop" id="backdrop"></div>
@@ -620,7 +588,7 @@ function monthTotals(k) {
   const totalBudget = factureBudget + depenseBudget;
   const totalSpent = factureSpent + depenseSpent;
   const reste = income - totalSpent - savings;
-  const pctUsed = totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0;
+  const pctUsed = income > 0 ? Math.round((totalSpent / income) * 100) : 0;
 
   // days left in month
   const today = new Date();
@@ -730,7 +698,7 @@ function renderBudget(root) {
       <div class="hero-info">
         <div class="hero-label">Reste à dépenser</div>
         <div class="hero-value${T.reste < 0 ? ' negative' : ''}">${fmtEur(T.reste, { decimals: 0 })}</div>
-        <div class="hero-sub">sur ${fmtEur(T.totalBudget, { decimals: 0 })} · ${T.daysLeft} j restants</div>
+        <div class="hero-sub">sur ${fmtEur(T.income, { decimals: 0 })} · ${T.daysLeft} j restants</div>
       </div>
     </div>
   `;
@@ -1067,7 +1035,10 @@ function renderHistoryList(container) {
 }
 
 function txName(t) {
-  if (t.type === 'income') return 'Revenu';
+  if (t.type === 'income') {
+    const s = INCOME_SOURCES.find(s => s.id === t.incomeSource);
+    return s ? s.name : 'Revenu';
+  }
   if (t.type === 'saving') {
     const p = DATA.projects.find(p => p.id === t.projectId);
     return p ? `Épargne · ${p.name}` : 'Épargne';
@@ -1307,8 +1278,13 @@ function updateSaveEnabled() {
 
 /* ADD / EDIT TRANSACTION */
 
+const INCOME_SOURCES = [
+  { id: 'revenus1', name: 'Revenus 1' },
+  { id: 'revenus2', name: 'Revenus 2' },
+];
+
 function openAddTx() {
-  const form = { type: 'expense', categoryId: 'courses', projectId: DATA.projects[0]?.id, amount: '', date: todayISO(), note: '' };
+  const form = { type: 'expense', categoryId: null, projectId: null, incomeSource: null, amount: '', date: todayISO(), note: '' };
   renderTxSheet(form, 'Nouvelle transaction', null);
 }
 
@@ -1357,32 +1333,64 @@ function renderTxSheet(form, title, original) {
   amountField.dataset.invalid = (!form.amount || parseFloat(form.amount) <= 0) ? 'true' : 'false';
   body.appendChild(amountField);
 
-  // Category / Project picker
+  // Category / Project / Income-source picker — required
+  const pickerWrap = el('div');
   if (form.type === 'expense') {
     const label = el('div', { class: 'fld-label', style: 'padding: 6px 6px 0;' }, 'Catégorie');
-    body.appendChild(label);
-    const grid = el('div', { class: 'chip-grid' });
-    DATA.categories.forEach(c => {
-      const chip = el('div', {
-        class: 'chip' + (form.categoryId === c.id ? ' selected' : ''),
-        onclick: () => { form.categoryId = c.id; renderTxSheet(form, title, original); }
-      }, c.name);
-      grid.appendChild(chip);
-    });
-    body.appendChild(grid);
+    pickerWrap.appendChild(label);
+    if (DATA.categories.length === 0) {
+      const hint = el('div', { style: 'padding: 10px 6px; font-size: 12px; color: var(--warn);' },
+        "Aucune catégorie. Créez-en une depuis l'onglet Budget.");
+      pickerWrap.appendChild(hint);
+    } else {
+      const grid = el('div', { class: 'chip-grid' });
+      DATA.categories.forEach(c => {
+        const chip = el('div', {
+          class: 'chip' + (form.categoryId === c.id ? ' selected' : ''),
+          onclick: () => { form.categoryId = c.id; renderTxSheet(form, title, original); }
+        }, c.name);
+        grid.appendChild(chip);
+      });
+      pickerWrap.appendChild(grid);
+    }
+    const valid = !!DATA.categories.find(c => c.id === form.categoryId);
+    pickerWrap.dataset.invalid = valid ? 'false' : 'true';
   } else if (form.type === 'saving') {
     const label = el('div', { class: 'fld-label', style: 'padding: 6px 6px 0;' }, 'Projet');
-    body.appendChild(label);
-    const grid = el('div', { class: 'chip-grid' });
-    DATA.projects.forEach(p => {
+    pickerWrap.appendChild(label);
+    if (DATA.projects.length === 0) {
+      const hint = el('div', { style: 'padding: 10px 6px; font-size: 12px; color: var(--warn);' },
+        "Aucun projet. Créez-en un depuis l'onglet Épargne.");
+      pickerWrap.appendChild(hint);
+    } else {
+      const grid = el('div', { class: 'chip-grid' });
+      DATA.projects.forEach(p => {
+        const chip = el('div', {
+          class: 'chip' + (form.projectId === p.id ? ' selected' : ''),
+          onclick: () => { form.projectId = p.id; renderTxSheet(form, title, original); }
+        }, p.name);
+        grid.appendChild(chip);
+      });
+      pickerWrap.appendChild(grid);
+    }
+    const valid = !!DATA.projects.find(p => p.id === form.projectId);
+    pickerWrap.dataset.invalid = valid ? 'false' : 'true';
+  } else if (form.type === 'income') {
+    const label = el('div', { class: 'fld-label', style: 'padding: 6px 6px 0;' }, 'Source');
+    pickerWrap.appendChild(label);
+    const grid = el('div', { class: 'chip-grid', style: 'grid-template-columns: repeat(2, 1fr);' });
+    INCOME_SOURCES.forEach(s => {
       const chip = el('div', {
-        class: 'chip' + (form.projectId === p.id ? ' selected' : ''),
-        onclick: () => { form.projectId = p.id; renderTxSheet(form, title, original); }
-      }, p.name);
+        class: 'chip' + (form.incomeSource === s.id ? ' selected' : ''),
+        onclick: () => { form.incomeSource = s.id; renderTxSheet(form, title, original); }
+      }, s.name);
       grid.appendChild(chip);
     });
-    body.appendChild(grid);
+    pickerWrap.appendChild(grid);
+    const valid = !!INCOME_SOURCES.find(s => s.id === form.incomeSource);
+    pickerWrap.dataset.invalid = valid ? 'false' : 'true';
   }
+  body.appendChild(pickerWrap);
 
   // Date + Note
   const dateField = el('div', { class: 'field' });
@@ -1415,6 +1423,10 @@ function renderTxSheet(form, title, original) {
   openSheet(title, body, () => {
     const amt = parseFloat(form.amount);
     if (!amt || amt <= 0) return;
+    // Required pickers
+    if (form.type === 'expense' && !DATA.categories.find(c => c.id === form.categoryId)) return;
+    if (form.type === 'saving' && !DATA.projects.find(p => p.id === form.projectId)) return;
+    if (form.type === 'income' && !INCOME_SOURCES.find(s => s.id === form.incomeSource)) return;
     const tx = {
       id: original?.id || uid(),
       date: form.date || todayISO(),
@@ -1424,6 +1436,7 @@ function renderTxSheet(form, title, original) {
     };
     if (form.type === 'expense') tx.categoryId = form.categoryId;
     else if (form.type === 'saving') tx.projectId = form.projectId;
+    else if (form.type === 'income') tx.incomeSource = form.incomeSource;
 
     if (original) {
       DATA.transactions = DATA.transactions.map(t => t.id === original.id ? tx : t);
@@ -1599,14 +1612,6 @@ function toast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('show'), 1800);
 }
-
-/* Clock */
-function updateClock() {
-  const d = new Date();
-  document.getElementById('clock').textContent = `${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
-}
-updateClock();
-setInterval(updateClock, 30000);
 
 /* Escape */
 function escapeHtml(s) {
